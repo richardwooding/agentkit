@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/richardwooding/agentkit v0.0.0
+	github.com/richardwooding/agentkit v0.1.0
 	github.com/richardwooding/llmkit v0.2.0
 )
 
@@ -19,6 +19,3 @@ require (
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 )
-
-// TODO(release): drop replace, require the tagged root version
-replace github.com/richardwooding/agentkit => ../
