@@ -1,0 +1,40 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - run: go build ./...
+      - run: go test -race ./...
+      - name: go fix (check)
+        run: go fix -diff ./...
+      - run: go vet ./...
+      - name: mcp module
+        working-directory: mcp
+        run: |
+          go build ./...
+          go test -race ./...
+          go vet ./...
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          # golangci-lint's typecheck must run against the toolchain the module
+          # targets; `stable` drifts ahead of what the pinned linter supports.
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.1
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.1
+          working-directory: mcp

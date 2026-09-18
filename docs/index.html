@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-NB62JPNJ');</script>
+<!-- End Google Tag Manager -->
+<title>agentkit — an agent framework for Go on llmkit</title>
+<meta name="description" content="Agent framework for Go on top of llmkit: tools typed as Go structs with generated JSON Schema, a budgeted tool-calling loop that streams events, conversation memory with compaction, MCP servers as tools, and multi-agent handoffs.">
+<meta property="og:url" content="https://richardwooding.github.io/agentkit/">
+<meta property="og:site_name" content="Richard Wooding">
+<meta property="og:title" content="agentkit">
+<meta property="og:description" content="Agent framework for Go: typed tools, budgeted loop, streaming events, memory, MCP tools, handoffs — any model llmkit can reach.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="agentkit">
+<meta name="twitter:description" content="Agent framework for Go: typed tools, budgeted loop, streaming events, memory, MCP tools, handoffs — any model llmkit can reach.">
+<link rel="canonical" href="https://richardwooding.github.io/agentkit/">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%23161b22'/><circle cx='12' cy='12' r='3' fill='%23bd93ff'/><circle cx='5' cy='6' r='2' fill='%23a371f7'/><circle cx='19' cy='6' r='2' fill='%23a371f7'/><circle cx='5' cy='18' r='2' fill='%23a371f7'/><circle cx='19' cy='18' r='2' fill='%23a371f7'/><path d='M7 7l3 3M17 7l-3 3M7 17l3-3M17 17l-3-3' stroke='%23d2b3ff' stroke-width='1.5'/></svg>">
+<script>try{var t=localStorage.getItem("gl-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="gloam.css">
+</head>
+<body class="gl">
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NB62JPNJ"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<a class="gl-skip" href="#main">Skip to content</a>
+
+<header class="gl-nav">
+  <div class="gl-wrap">
+    <span class="gl-brand">
+      <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true">
+        <rect width="24" height="24" rx="6" fill="var(--gl-panel-2)"/>
+        <circle cx="12" cy="12" r="3" fill="var(--gl-accent-2)"/>
+        <circle cx="5" cy="6" r="2" fill="var(--gl-accent)"/><circle cx="19" cy="6" r="2" fill="var(--gl-accent)"/>
+        <circle cx="5" cy="18" r="2" fill="var(--gl-accent)"/><circle cx="19" cy="18" r="2" fill="var(--gl-accent)"/>
+        <path d="M7 7l3 3M17 7l-3 3M7 17l3-3M17 17l-3-3" stroke="#d2b3ff" stroke-width="1.5"/>
+      </svg>
+      agentkit
+    </span>
+    <button class="gl-nav-toggle" aria-label="Toggle navigation" data-gl-nav-toggle="nav" aria-expanded="false">☰</button>
+    <nav id="nav">
+      <a href="#features">Features</a>
+      <a href="#usage">Usage</a>
+      <a href="#install">Install</a>
+      <button class="gl-theme-toggle" data-gl-theme-toggle aria-label="Toggle color theme" aria-pressed="true">
+        <svg class="gl-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        <svg class="gl-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>
+      </button>
+      <a class="gl-btn ghost" href="https://github.com/richardwooding/agentkit">GitHub ★</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="gl-hero">
+    <div class="gl-wrap gl-hero-grid">
+      <div>
+        <p class="gl-eyebrow">go · agents · built on llmkit</p>
+        <h1>Agents that stay <span class="gl-grad">inside their budget.</span></h1>
+        <p class="sub">Write a tool as a Go function and agentkit derives its JSON Schema, validates every call, runs the model/tool loop with step, token and time budgets, and streams what happens. Memory, MCP servers and multi-agent handoffs are one option each. Any of llmkit's twelve providers, by model name.</p>
+        <div class="gl-cta">
+          <a class="gl-btn primary" href="#install">Install</a>
+          <a class="gl-btn ghost" href="https://pkg.go.dev/github.com/richardwooding/agentkit">Go Reference</a>
+        </div>
+        <p class="gl-hint">MIT licensed · pure Go 1.27 · two dependencies</p>
+      </div>
+      <div class="gl-term">
+        <div class="bar">
+          <span class="dot" style="background:#ff5f56"></span>
+          <span class="dot" style="background:#ffbd2e"></span>
+          <span class="dot" style="background:#27c93f"></span>
+          <span class="t">main.go</span>
+        </div>
+<pre><span class="n">weather</span> := agentkit.Func(<span class="ok">"weather"</span>, <span class="ok">"Current weather for a city"</span>,
+    <span class="k">func</span>(ctx context.Context, in <span class="k">struct</span>{ City <span class="k">string</span> `json:"city"` }) (<span class="k">string</span>, error) {
+        <span class="k">return</span> lookup(in.City), <span class="k">nil</span>
+    })
+<span class="n">agent</span>, _ := agentkit.New(<span class="ok">"claude-sonnet-4-5"</span>,
+    agentkit.WithTools(weather),
+    agentkit.WithBudget(agentkit.Budget{MaxSteps: <span class="n">8</span>}))
+res, _ := agent.Run(ctx, <span class="ok">"Weather in Cape Town?"</span>)
+<span class="hd">// res.Output, res.Steps, res.Usage.TotalTokens</span></pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="gl-section" id="features">
+    <div class="gl-wrap">
+      <p class="gl-eyebrow">what you get</p>
+      <h2>Small primitives, honest transcripts.</h2>
+      <p class="gl-lede" style="margin-top:14px">Every tool call gets its result, even when a budget or a cancellation stops the step half way, so transcripts stay valid for every provider.</p>
+      <div class="gl-grid feat" style="margin-top:32px">
+        <div class="gl-card">
+          <h3><span class="gl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 7l-1.5 1.5a2 2 0 0 0 0 3L14 13M10 17l1.5-1.5a2 2 0 0 0 0-3L10 11M8 7H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2M16 7h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2"/></svg></span>Typed tools</h3>
+          <p><code>Func[In, Out]</code> derives the schema from your struct tags, validates arguments before your code runs, and marshals the result. Middleware adds timeouts, approval gates and panic recovery.</p>
+        </div>
+        <div class="gl-card">
+          <h3><span class="gl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Budgets</h3>
+          <p>Steps, tokens, tool calls, handoffs and wall time. A stop returns the partial <code>Result</code> with a typed <code>BudgetError</code>; nothing is lost.</p>
+        </div>
+        <div class="gl-card">
+          <h3><span class="gl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>Streaming events</h3>
+          <p><code>Stream</code> yields text deltas, tool calls, results, retries, compactions and a final result as an <code>iter.Seq2</code>. Break to cancel.</p>
+        </div>
+        <div class="gl-card">
+          <h3><span class="gl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h10M4 17h7"/></svg></span>Typed output</h3>
+          <p><code>Run[T]</code> returns a decoded Go value: JSON-schema output where the provider supports it, a <code>final_answer</code> tool everywhere else.</p>
+        </div>
+        <div class="gl-card">
+          <h3><span class="gl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 3 0 0 0 18 0M3 5a9 3 0 0 0 18 0M3 5v14a9 3 0 0 0 18 0V5"/></svg></span>Memory</h3>
+          <p>Lossless session stores, window and summary compaction that never splits a tool call from its result, and vector recall over any llmkit embedder.</p>
+        </div>
+        <div class="gl-card">
+          <h3><span class="gl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M8 8l3 7M16 8l-3 7"/></svg></span>Multi-agent &amp; MCP</h3>
+          <p>Sub-agents as tools, Swarm-style handoffs, bounded <code>Map</code> fan-out — and every tool of an MCP server, via the nested <code>agentkit/mcp</code> module.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="gl-section" id="usage">
+    <div class="gl-wrap">
+      <p class="gl-eyebrow">usage</p>
+      <h2>Stream it, or ask for a struct.</h2>
+      <div class="gl-split" style="margin-top:28px">
+<pre class="gl-code"><span class="c">// Stream events as the run progresses</span>
+<span class="k">for</span> e, err := <span class="k">range</span> agent.Stream(ctx, <span class="s">"Plan my week"</span>) {
+    <span class="k">if</span> err != <span class="k">nil</span> { <span class="k">return</span> err }
+    <span class="k">switch</span> e.Kind {
+    <span class="k">case</span> agentkit.EventText:     fmt.Print(e.Text)
+    <span class="k">case</span> agentkit.EventToolCall: log(e.ToolCall.Name)
+    <span class="k">case</span> agentkit.EventFinish:   log(e.Result.StopReason)
+    }
+}</pre>
+<pre class="gl-code"><span class="c">// Typed final answer</span>
+<span class="k">type</span> Forecast <span class="k">struct</span> {
+    City  <span class="k">string</span> `json:"city"`
+    TempC <span class="k">int</span>    `json:"temp_c"`
+}
+forecast, res, err := agentkit.Run[Forecast](ctx, agent,
+    <span class="s">"Forecast for Cape Town?"</span>)</pre>
+      </div>
+      <ul class="gl-badges" aria-label="API surface" style="margin-top:26px">
+        <li class="gl-lang">Func</li><li class="gl-lang">New</li><li class="gl-lang">Run</li><li class="gl-lang">Stream</li>
+        <li class="gl-lang">Run[T]</li><li class="gl-lang">Budget</li><li class="gl-lang">Approve</li><li class="gl-lang">Window</li>
+        <li class="gl-lang">Summarize</li><li class="gl-lang">AsTool</li><li class="gl-lang">Handoff</li><li class="gl-lang">Map</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="gl-section" id="install">
+    <div class="gl-wrap">
+      <p class="gl-eyebrow">install</p>
+      <h2>Add it to your module.</h2>
+      <p class="gl-lede" style="margin-top:14px">Requires Go 1.27+. The MCP bridge is a separate module you opt into.</p>
+      <div class="gl-install" style="margin-top:26px">
+        <div class="gl-snip">
+          <span class="lbl">go get</span>
+          <code id="i1">go get github.com/richardwooding/agentkit</code>
+          <button class="gl-copy" data-gl-copy="i1">Copy</button>
+        </div>
+        <div class="gl-snip">
+          <span class="lbl">optional</span>
+          <code id="i2">go get github.com/richardwooding/agentkit/mcp</code>
+          <button class="gl-copy" data-gl-copy="i2">Copy</button>
+        </div>
+      </div>
+      <p class="gl-hint">Full API on <a href="https://pkg.go.dev/github.com/richardwooding/agentkit">pkg.go.dev</a> · models come from <a href="https://richardwooding.github.io/llmkit/">llmkit</a>.</p>
+    </div>
+  </section>
+</main>
+
+<footer class="gl-footer">
+  <div class="gl-wrap">
+    <span class="gl-brand" style="font-size:.98rem">agentkit · MIT · <span data-gl-year></span></span>
+    <nav class="gl-fnav">
+      <a href="https://richardwooding.github.io/">Richard Wooding</a>
+      <a href="https://github.com/richardwooding/agentkit">GitHub</a>
+      <a href="https://pkg.go.dev/github.com/richardwooding/agentkit">Go Reference</a>
+      <a href="https://github.com/richardwooding/agentkit/blob/main/LICENSE">License</a>
+    </nav>
+  </div>
+</footer>
+
+<script src="gloam.js" defer></script>
+</body>
+</html>
