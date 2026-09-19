@@ -4,8 +4,8 @@ go 1.27.0
 
 require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/richardwooding/agentkit v0.2.0
-	github.com/richardwooding/llmkit v0.2.0
+	github.com/richardwooding/agentkit v0.3.0
+	github.com/richardwooding/llmkit v0.3.0
 )
 
 require (
