@@ -75,7 +75,11 @@ for e, err := range agent.Stream(ctx, "Plan my week") {
 ```
 
 The model is streamed when the provider supports it; otherwise one text event carries the
-whole reply. Breaking out of the loop cancels the run.
+whole reply. Breaking out of the loop cancels the run. Events always arrive on the goroutine
+that ranges over the stream, even with `WithParallel`. `EventUsage` follows every model call
+with that call's own token usage (a context meter needs `Usage.InputTokens`); tools can
+report interim output with `Progress(ctx, text)` or `ProgressWriter(ctx)`, which surface as
+`EventToolProgress` without touching the transcript.
 
 ### Typed output
 
@@ -100,19 +104,45 @@ agent, _ := agentkit.New("gpt-5",
 	agentkit.WithMiddleware(
 		agentkit.Recover(),
 		agentkit.Timeout(30*time.Second),
-		agentkit.Approve(func(ctx context.Context, c agentkit.Call) error {
-			if c.Call.Name == "delete_file" && !confirm(c.Call.Arguments) {
-				return errors.New("user declined")
+		agentkit.ApproveWith(agentkit.ApproverFunc(func(ctx context.Context, c agentkit.Call) (agentkit.Decision, error) {
+			switch c.Call.Name {
+			case "delete_file":
+				return askUser(ctx, c) // Allow(), AllowWith(rewrittenArgs) or Deny(reason)
+			default:
+				return agentkit.Allow(), nil
 			}
-			return nil
-		}),
+		})),
 	),
 	agentkit.WithParallel(4),
 )
 ```
 
-A denied call is fed back to the model as an error result; the run continues. Wrap a tool
-in `Serial()` to keep it out of parallel batches.
+`ApproveWith` may block for as long as a person takes to answer: in a streaming run an
+`EventApprovalRequest` precedes the `Approver` and an `EventApprovalResult` carries its
+`Decision`, so a UI can show the pending call and answer it asynchronously. A denial is fed
+back to the model as an error result wrapping `ErrApprovalDenied` and the run continues;
+canceling ctx while approval is pending stops the run as `StopCancelled`. Rewritten
+arguments reach the tool but the transcript keeps what the model wrote. `Approve(fn)` is the
+error-only shorthand. Wrap a tool in `Serial()` to keep it out of parallel batches.
+
+### Steering a running agent
+
+```go
+inbox := agentkit.NewInbox()
+go func() { inbox.Post(core.Text("also run the tests")) }()
+res, err := agent.Run(ctx, "fix the bug", agentkit.WithInbox(inbox))
+```
+
+Messages posted while the run executes are appended at the next step boundary (after the
+current tool results, before the next model call); if the model has already answered, the
+run continues with them instead of finishing. Cancel ctx to interrupt instead.
+
+### Switching models on a session
+
+```go
+fast, err := agent.With(agentkit.WithName("fast")) // same options, replayed; middleware wraps once
+client := agent.Client()                            // the underlying llmkit Chatter
+```
 
 ### Memory
 
@@ -127,10 +157,16 @@ agent, _ := agentkit.New("gemini-2.5-pro",
 res, _ := agent.Run(ctx, "Where did we leave off?", agentkit.WithSession("richard"))
 ```
 
-Stores are lossless. Compaction only shapes what the model sees, whole turns at a time, and
-runs proactively near the window or reactively when a provider reports the context is too
-long. A tool that implements `Pinned` keeps its results visible: once compaction drops the
-turn holding one, the content is re-sent in the system prompt of the outgoing request. `VectorMemory` builds on any llmkit `Embedder` (and optionally a `Reranker`).
+Stores are lossless. `FileStore` is append-only JSON Lines (one `{"t":…,"m":…}` per message,
+fsync'd, torn tails tolerated; older single-array files are migrated on first write), and
+both stores implement `Lister` (`List` → `SessionInfo{ID, Created, Updated, Messages,
+Title}`) for a session picker. Compaction only shapes what the model sees, whole turns at a
+time, and runs proactively near the window or reactively when a provider reports the
+context is too long; `Summarize(c, 0)` replays nothing but the summary and
+`StripReasoning()` drops reasoning blocks before replaying a transcript to another model.
+A tool that implements `Pinned` keeps its results visible: once compaction drops the turn
+holding one, the content is re-sent in the system prompt of the outgoing request, fenced as
+data. `VectorMemory` builds on any llmkit `Embedder` (and optionally a `Reranker`).
 
 ### Multi-agent
 
@@ -147,8 +183,10 @@ front, _ := agentkit.New("gpt-5-mini",
 ```
 
 `AsTool` runs the child with its own budget and returns only its final text; its usage is
-added to the parent. `Handoff` switches instructions, tools and model while carrying the
-transcript. `Map` runs any function over inputs with bounded concurrency.
+added to the parent. With `agentkit.WithForwardEvents()` the child's events appear in the
+parent's stream too, carrying the child's `RunID`, `Depth` and `Parent` (the enclosing run
+ID). `Handoff` switches instructions, tools and model while carrying the transcript. `Map`
+runs any function over inputs with bounded concurrency.
 
 ### MCP servers as tools
 
@@ -161,6 +199,10 @@ defer fs.Close()
 tools, err := fs.Tools(ctx)
 agent, _ := agentkit.New("gpt-5", agentkit.WithTools(tools...))
 ```
+
+Each tool implements `agentmcp.Annotated`, exposing the server's `readOnlyHint`,
+`destructiveHint` and friends for a consent UI. They are the server's own claims; never use
+them to skip approval.
 
 ### Skills
 
