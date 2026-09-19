@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-19
+
 ### Added
 
 - `skills` package: load [Agent Skills](https://agentskills.io) from any `fs.FS`, render the
