@@ -223,6 +223,11 @@ func (r *run) runsConcurrently(c core.ToolCall) bool {
 func (r *run) callTool(ctx context.Context, tc core.ToolCall) core.ToolResult {
 	call := Call{RunID: r.runID, Agent: r.agent.name, Session: r.cfg.session, Step: r.res.Steps, Depth: r.depth, Call: tc}
 	ctx = WithCall(ctx, call)
+	var send func(Event)
+	if r.emit != nil {
+		send = r.send
+	}
+	ctx = withToolCtx(ctx, tc, send)
 	if r.hooks.OnToolCall != nil {
 		r.hooks.OnToolCall(ToolCallInfo{Call: call})
 	}

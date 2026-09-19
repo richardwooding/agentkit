@@ -99,6 +99,34 @@ func WithCall(ctx context.Context, c Call) context.Context {
 	return context.WithValue(ctx, callKey{}, c)
 }
 
+// toolCtx is what callTool installs for the duration of one tool invocation:
+// the call and a sender that stamps events with it. send is nil when the run
+// is not streaming, so Progress and approval events become no-ops.
+type toolCtx struct {
+	call core.ToolCall
+	send func(Event)
+}
+
+type toolCtxKey struct{}
+
+func withToolCtx(ctx context.Context, tc core.ToolCall, send func(Event)) context.Context {
+	return context.WithValue(ctx, toolCtxKey{}, toolCtx{call: tc, send: send})
+}
+
+// toolSender returns a function that emits e with the current tool call
+// attached, or nil when ctx is not inside a streaming run.
+func toolSender(ctx context.Context) func(Event) {
+	t, ok := ctx.Value(toolCtxKey{}).(toolCtx)
+	if !ok || t.send == nil {
+		return nil
+	}
+	tc := t.call
+	return func(e Event) {
+		e.ToolCall = &tc
+		t.send(e)
+	}
+}
+
 type rawTool struct {
 	def core.Tool
 	fn  func(context.Context, json.RawMessage) (Output, error)

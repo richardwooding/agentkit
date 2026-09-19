@@ -54,15 +54,50 @@ func Timeout(d time.Duration) Middleware {
 
 // Approve gates each call; a non-nil error from fn is fed back to the model as
 // an error result wrapping ErrApprovalDenied. Cancel ctx inside fn to abort
-// the run instead.
+// the run instead. It is ApproveWith over an Approver that denies on error.
 func Approve(fn func(ctx context.Context, c Call) error) Middleware {
+	return ApproveWith(ApproverFunc(func(ctx context.Context, c Call) (Decision, error) {
+		if err := fn(ctx, c); err != nil {
+			return Decision{}, err
+		}
+		return Allow(), nil
+	}))
+}
+
+// ApproveWith gates each call through ap. In a streaming run an
+// EventApprovalRequest precedes the Approver and an EventApprovalResult carries
+// its Decision, so a UI can show the pending call and answer it asynchronously.
+// A denial (or an Approver error) becomes an error result wrapping
+// ErrApprovalDenied and the run continues; when ctx ends while approval is
+// pending, ctx.Err() is returned so the run stops as canceled. Rewritten
+// arguments reach the tool but are not written back into the transcript.
+func ApproveWith(ap Approver) Middleware {
 	return middleware(func(ctx context.Context, next Tool, args json.RawMessage) (Output, error) {
 		c, _ := CallFrom(ctx)
 		if c.Call.Name == "" {
 			c.Call = core.ToolCall{Name: next.Definition().Name, Arguments: args}
 		}
-		if err := fn(ctx, c); err != nil {
-			return Errorf("not approved: %v", err), fmt.Errorf("%w: %w", ErrApprovalDenied, err)
+		send := toolSender(ctx)
+		if send != nil {
+			send(Event{Kind: EventApprovalRequest})
+		}
+		d, err := ap.Approve(ctx, c)
+		if err != nil {
+			d = Deny(err.Error())
+		}
+		if send != nil {
+			send(Event{Kind: EventApprovalResult, Decision: &d})
+		}
+		if ctx.Err() != nil {
+			return Errorf("%s%v", notExecutedMessage, ctx.Err()), ctx.Err()
+		}
+		if !d.Allow {
+			return Errorf("not approved: %s", d.Reason), fmt.Errorf("%w: %s", ErrApprovalDenied, d.Reason)
+		}
+		if d.Arguments != nil {
+			args = d.Arguments
+			c.Call.Arguments = args
+			ctx = WithCall(ctx, c)
 		}
 		return next.Call(ctx, args)
 	})
