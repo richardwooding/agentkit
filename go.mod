@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/google/jsonschema-go v0.4.3
-	github.com/richardwooding/llmkit v0.2.0
+	github.com/richardwooding/llmkit v0.3.0
 )
 
 require (
