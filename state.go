@@ -29,10 +29,12 @@ type runStateKey struct{}
 type runState struct {
 	depth int
 	sink  *usageSink
+	runID string
+	emit  func(Event)
 }
 
 func withRunState(ctx context.Context, r *run) context.Context {
-	return context.WithValue(ctx, runStateKey{}, runState{depth: r.depth + 1, sink: r.sink})
+	return context.WithValue(ctx, runStateKey{}, runState{depth: r.depth + 1, sink: r.sink, runID: r.runID, emit: r.emit})
 }
 
 // depthFrom returns the nesting depth for a run started under ctx.
@@ -49,4 +51,14 @@ func parentSink(ctx context.Context) *usageSink {
 		return s.sink
 	}
 	return nil
+}
+
+// parentEmitter returns the raw event sender of the enclosing streaming run and
+// its run ID; ok is false when the enclosing run is not streaming.
+func parentEmitter(ctx context.Context) (emit func(Event), runID string, ok bool) {
+	s, isRun := ctx.Value(runStateKey{}).(runState)
+	if !isRun || s.emit == nil {
+		return nil, "", false
+	}
+	return s.emit, s.runID, true
 }

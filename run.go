@@ -96,24 +96,45 @@ func (a *Agent) StreamMessages(ctx context.Context, msgs []core.Message, opts ..
 	return a.streamRun(ctx, msgs, applyRunOptions(opts), nil)
 }
 
+// streamRun executes the run on its own goroutine and yields every event from
+// the iterator goroutine, so consumers never see events from pool workers.
+// After the consumer breaks, the loop keeps draining so producers never block;
+// the run itself is canceled through ctx.
 func (a *Agent) streamRun(ctx context.Context, msgs []core.Message, cfg runConfig, typed *typedOutput) iter.Seq2[Event, error] {
 	return func(yield func(Event, error) bool) {
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
-		stopped := false
+		events := make(chan Event)
+		done := make(chan struct{})
 		emit := func(e Event) {
-			if stopped {
-				return
-			}
-			if !yield(e, nil) {
-				stopped = true
-				cancel()
+			select {
+			case events <- e:
+			case <-done:
 			}
 		}
 		r := newRun(a, cfg, emit, typed)
-		res, err := r.execute(ctx, msgs)
+		var (
+			res    *Result
+			runErr error
+		)
+		go func() {
+			defer close(done)
+			res, runErr = r.execute(ctx, msgs)
+		}()
+		stopped, running := false, true
+		for running {
+			select {
+			case e := <-events:
+				if !stopped && !yield(e, nil) {
+					stopped = true
+					cancel()
+				}
+			case <-done:
+				running = false
+			}
+		}
 		if !stopped {
-			yield(Event{Kind: EventFinish, RunID: res.RunID, Agent: res.Agent, Result: res}, err)
+			yield(Event{Kind: EventFinish, RunID: res.RunID, Agent: res.Agent, Result: res}, runErr)
 		}
 	}
 }
