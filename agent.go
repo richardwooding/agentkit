@@ -3,6 +3,7 @@ package agentkit
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/richardwooding/llmkit"
@@ -33,6 +34,12 @@ type Agent struct {
 
 	registry   *llmkit.Registry
 	clientOpts []core.Option
+
+	// model and client remember how the agent was built so With can replay
+	// the options instead of wrapping already-wrapped tools.
+	model  string
+	client core.Chatter
+	opts   []Option
 }
 
 // Option configures an Agent.
@@ -40,7 +47,7 @@ type Option func(*Agent) error
 
 // New resolves model through llmkit and builds an Agent.
 func New(model string, opts ...Option) (*Agent, error) {
-	a := &Agent{name: model}
+	a := &Agent{name: model, model: model, opts: slices.Clone(opts)}
 	if err := a.apply(opts); err != nil {
 		return nil, err
 	}
@@ -66,7 +73,7 @@ func NewFromClient(c core.Chatter, opts ...Option) (*Agent, error) {
 	if c == nil {
 		return nil, errors.New("agentkit: nil client")
 	}
-	a := &Agent{name: "agent", chat: c}
+	a := &Agent{name: "agent", chat: c, client: c, opts: slices.Clone(opts)}
 	a.stream, _ = c.(core.Streamer)
 	if err := a.apply(opts); err != nil {
 		return nil, err
@@ -108,8 +115,23 @@ func (a *Agent) finish() (*Agent, error) {
 	return a, nil
 }
 
+// With returns a new Agent built like a — the same model or client, the
+// original options — with opts applied afterwards, so tools are wrapped by
+// their middleware exactly once. a is unchanged.
+func (a *Agent) With(opts ...Option) (*Agent, error) {
+	all := make([]Option, 0, len(a.opts)+len(opts))
+	all = append(append(all, a.opts...), opts...)
+	if a.model != "" {
+		return New(a.model, all...)
+	}
+	return NewFromClient(a.client, all...)
+}
+
 // Name returns the agent's name (the model name unless WithName was used).
 func (a *Agent) Name() string { return a.name }
+
+// Client returns the llmkit client (or fake) the agent talks to.
+func (a *Agent) Client() core.Chatter { return a.chat }
 
 // Tools returns the agent's tools after middleware has been applied.
 func (a *Agent) Tools() Toolset { return append(Toolset(nil), a.tools...) }
