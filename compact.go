@@ -150,6 +150,30 @@ func (w *window) Compact(_ context.Context, msgs []core.Message, budget int) ([]
 	return joinTurns(system, turns), nil
 }
 
+// StripReasoning drops reasoning parts from every message and any message
+// left empty by that. Use it in a Chain when a transcript must be replayed
+// to a model that rejects another model's reasoning blocks (for example after
+// switching models on a session); text and tool calls are untouched.
+func StripReasoning() Compactor {
+	return CompactorFunc(func(_ context.Context, msgs []core.Message, _ int) ([]core.Message, error) {
+		out := make([]core.Message, 0, len(msgs))
+		for _, m := range msgs {
+			parts := make([]core.Part, 0, len(m.Parts))
+			for _, p := range m.Parts {
+				if _, ok := p.(core.ReasoningPart); !ok {
+					parts = append(parts, p)
+				}
+			}
+			if len(parts) == 0 && len(m.Parts) > 0 {
+				continue
+			}
+			m.Parts = parts
+			out = append(out, m)
+		}
+		return out, nil
+	})
+}
+
 // SummarizeOption configures Summarize.
 type SummarizeOption func(*summarizer)
 
@@ -167,10 +191,12 @@ const defaultSummaryPrompt = "Summarize the conversation so far for your own fut
 	"Keep every fact, decision, open question and tool result the assistant may still need. Be dense and neutral."
 
 // Summarize replaces turns older than keepTurns with one model-written summary,
-// inserted as a user message after the system prompt. Summaries are memoised
-// per dropped prefix so repeated runs in one process do not pay twice.
+// inserted as a user message after the system prompt. keepTurns 0 replays
+// nothing: the model sees only the system prompt and the summary. Summaries
+// are memoised per dropped prefix so repeated runs in one process do not pay
+// twice.
 func Summarize(c core.Chatter, keepTurns int, opts ...SummarizeOption) Compactor {
-	s := &summarizer{chat: c, keep: max(keepTurns, 1), prompt: defaultSummaryPrompt, est: CharEstimator{}, memo: map[string]string{}}
+	s := &summarizer{chat: c, keep: max(keepTurns, 0), prompt: defaultSummaryPrompt, est: CharEstimator{}, memo: map[string]string{}}
 	for _, o := range opts {
 		o(s)
 	}

@@ -107,7 +107,7 @@ func (r *run) step(ctx context.Context) bool {
 	r.drainInbox()
 	resp, err := r.callModel(ctx)
 	if err != nil {
-		r.stopWith(stopReasonFor(err), err)
+		r.stopWith(stopReasonFor(ctx, err), err)
 		return false
 	}
 	r.res.FinishReason = resp.FinishReason
@@ -181,7 +181,7 @@ func (r *run) toolCalls(ctx context.Context, calls []core.ToolCall) bool {
 		r.stopWith(StopMaxToolCalls, budgetStop)
 		return false
 	case ctx.Err() != nil:
-		r.stopWith(stopReasonFor(ctx.Err()), ctx.Err())
+		r.stopWith(stopReasonFor(ctx, ctx.Err()), ctx.Err())
 		return false
 	case r.handoff != nil:
 		return r.switchAgent(r.handoff)
@@ -353,7 +353,13 @@ func (r *run) fireRunStart() {
 	}
 }
 
-func stopReasonFor(err error) StopReason {
+// stopReasonFor classifies a run-ending error. The context is consulted first:
+// a provider often reports a canceled stream as its own transport error, and a
+// user's cancellation must read as canceled, not as a failure.
+func stopReasonFor(ctx context.Context, err error) StopReason {
+	if cerr := ctx.Err(); cerr != nil {
+		err = cerr
+	}
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
 		return StopDeadline

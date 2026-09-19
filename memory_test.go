@@ -275,6 +275,57 @@ func TestSummarize(t *testing.T) {
 	}
 }
 
+func TestSummarizeKeepZero(t *testing.T) {
+	summarizer := &scripted{responses: []*core.Response{text("ALL")}}
+	c := agentkit.Summarize(summarizer, 0)
+	msgs := []core.Message{core.System("s"), core.UserText("q1"), core.Assistant(core.Text("a1")), core.UserText("q2")}
+	out, err := c.Compact(context.Background(), msgs, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 2 || out[0].Role != core.RoleSystem || out[1].Role != core.RoleUser || out[1].Text() != "Summary of the earlier conversation:\nALL" {
+		t.Fatalf("out = %+v", out)
+	}
+	if sent := summarizer.seen[0].Messages; len(sent) != 4 || sent[2].Text() != "q2" {
+		t.Fatalf("summary request = %+v", sent)
+	}
+	if out, _ := c.Compact(context.Background(), []core.Message{core.System("s")}, 0); len(out) != 1 {
+		t.Fatalf("no turns must be untouched: %+v", out)
+	}
+}
+
+func TestStripReasoning(t *testing.T) {
+	msgs := []core.Message{
+		core.System("s"),
+		core.UserText("q"),
+		core.Assistant(core.ReasoningPart{Text: "thinking", Signature: "sig"}, core.ToolCall{ID: "1", Name: "f"}),
+		core.ToolResults(core.ToolResultText("1", "f", "r")),
+		core.Assistant(core.ReasoningPart{Text: "only thoughts"}),
+		core.Assistant(core.ReasoningPart{Text: "more"}, core.Text("answer")),
+	}
+	out, err := agentkit.StripReasoning().Compact(context.Background(), msgs, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 5 || len(out[2].Parts) != 1 || len(out[2].ToolCalls()) != 1 || out[4].Text() != "answer" || len(out[4].Parts) != 1 {
+		t.Fatalf("out = %+v", out)
+	}
+	for _, m := range out {
+		for _, p := range m.Parts {
+			if _, ok := p.(core.ReasoningPart); ok {
+				t.Fatalf("reasoning survived: %+v", m)
+			}
+		}
+	}
+	if len(msgs[2].Parts) != 2 {
+		t.Fatal("input mutated")
+	}
+	chained, _ := agentkit.Chain(agentkit.StripReasoning(), agentkit.Window(1)).Compact(context.Background(), msgs, 0)
+	if len(chained) != 5 || chained[0].Role != core.RoleSystem {
+		t.Fatalf("chain = %+v", chained)
+	}
+}
+
 type fakeReranker struct{}
 
 func (fakeReranker) Rerank(_ context.Context, req *core.RerankRequest) (*core.RerankResponse, error) {

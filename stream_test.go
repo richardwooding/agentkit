@@ -3,6 +3,7 @@ package agentkit_test
 import (
 	"context"
 	"errors"
+	"iter"
 	"testing"
 
 	"github.com/richardwooding/llmkit/core"
@@ -134,5 +135,55 @@ func TestStreamParallelToolsUnderRace(t *testing.T) {
 		if e.Kind == agentkit.EventFinish {
 			t.Fatal("more than one finish event")
 		}
+	}
+}
+
+// blockingStream yields one text chunk, then waits for ctx to end and reports
+// the cancellation as an opaque transport error, as real providers do.
+type blockingStream struct{ *scripted }
+
+func (b *blockingStream) Stream(ctx context.Context, req *core.Request) iter.Seq2[core.Chunk, error] {
+	return func(yield func(core.Chunk, error) bool) {
+		b.mu.Lock()
+		b.calls++
+		b.seen = append(b.seen, req)
+		b.mu.Unlock()
+		if !yield(core.Chunk{Kind: core.ChunkText, Text: "partial"}, nil) {
+			return
+		}
+		<-ctx.Done()
+		yield(core.Chunk{}, errors.New("transport closed: "+ctx.Err().Error()))
+	}
+}
+
+func TestStreamCancelMidStream(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	client := &blockingStream{&scripted{}}
+	a, _ := agentkit.NewFromClient(client, agentkit.WithTools(adder()))
+	var last agentkit.Event
+	var lastErr error
+	var texts int
+	for e, err := range a.Stream(ctx, "go") {
+		last, lastErr = e, err
+		if e.Kind == agentkit.EventText {
+			texts++
+			cancel()
+		}
+	}
+	if texts != 1 || last.Kind != agentkit.EventFinish || !errors.Is(lastErr, context.Canceled) && lastErr == nil {
+		t.Fatalf("last=%+v err=%v texts=%d", last, lastErr, texts)
+	}
+	if last.Result.StopReason != agentkit.StopCancelled {
+		t.Fatalf("stop reason = %s (err %v)", last.Result.StopReason, lastErr)
+	}
+	msgs := last.Result.Messages
+	for i, m := range msgs {
+		if calls := m.ToolCalls(); len(calls) > 0 && (i+1 >= len(msgs) || len(msgs[i+1].ToolResults()) != len(calls)) {
+			t.Fatalf("orphaned tool call at %d: %+v", i, msgs)
+		}
+	}
+	if len(last.Result.New) != 1 || last.Result.New[0].Role != core.RoleUser {
+		t.Fatalf("new = %+v", last.Result.New)
 	}
 }
