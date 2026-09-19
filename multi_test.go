@@ -103,3 +103,88 @@ func TestMap(t *testing.T) {
 		t.Fatalf("cancel: out=%v err=%v", out, err)
 	}
 }
+
+func TestAsToolForwardsEvents(t *testing.T) {
+	run := func(forward bool) []agentkit.Event {
+		childClient := &scriptedStream{&scripted{responses: []*core.Response{toolCalls(call("p", "add", `{"A":1,"B":1}`)), text("child says hi")}}}
+		child, _ := agentkit.NewFromClient(childClient, agentkit.WithName("child"), agentkit.WithTools(adder()))
+		var opts []agentkit.AsToolOption
+		if forward {
+			opts = append(opts, agentkit.WithForwardEvents())
+		}
+		parentClient := &scriptedStream{&scripted{responses: []*core.Response{toolCalls(call("c", "ask_child", `{"input":"hello"}`)), text("parent done")}}}
+		parent, _ := agentkit.NewFromClient(parentClient, agentkit.WithName("parent"), agentkit.WithTools(agentkit.AsTool(child, "ask_child", "delegate", opts...)))
+		var events []agentkit.Event
+		for e, err := range parent.Stream(context.Background(), "go") {
+			if err != nil {
+				t.Fatal(err)
+			}
+			events = append(events, e)
+		}
+		return events
+	}
+
+	events := run(true)
+	var child, parent []agentkit.Event
+	for _, e := range events {
+		if e.Depth == 1 {
+			child = append(child, e)
+		} else {
+			parent = append(parent, e)
+		}
+	}
+	if len(child) == 0 {
+		t.Fatalf("no child events forwarded: %v", kinds(events))
+	}
+	parentID := events[len(events)-1].RunID
+	for _, e := range child {
+		if e.Parent != parentID || e.Agent != "child" || e.RunID == parentID || e.RunID == "" {
+			t.Fatalf("child event = %+v", e)
+		}
+	}
+	childKinds := kinds(child)
+	wantChild := []agentkit.EventKind{
+		agentkit.EventStep, agentkit.EventUsage, agentkit.EventToolCall, agentkit.EventToolResult, agentkit.EventStep,
+		agentkit.EventText, agentkit.EventText, agentkit.EventUsage, agentkit.EventFinish,
+	}
+	if len(childKinds) != len(wantChild) {
+		t.Fatalf("child kinds = %v", childKinds)
+	}
+	for i := range wantChild {
+		if childKinds[i] != wantChild[i] {
+			t.Fatalf("child kinds = %v want %v", childKinds, wantChild)
+		}
+	}
+	if fin := child[len(child)-1]; fin.Result == nil || fin.Result.Output != "child says hi" || fin.Err != nil {
+		t.Fatalf("child finish = %+v", fin)
+	}
+	for _, e := range parent {
+		if e.Parent != "" || e.Agent != "parent" || e.Depth != 0 {
+			t.Fatalf("parent event = %+v", e)
+		}
+	}
+	// Child events sit between the parent's tool call and its result.
+	var callIdx, resultIdx, firstChild int
+	for i, e := range events {
+		switch {
+		case e.Kind == agentkit.EventToolCall && e.Depth == 0:
+			callIdx = i
+		case e.Kind == agentkit.EventToolResult && e.Depth == 0:
+			resultIdx = i
+		case e.Depth == 1 && firstChild == 0:
+			firstChild = i
+		}
+	}
+	if callIdx >= firstChild || firstChild >= resultIdx {
+		t.Fatalf("ordering: call=%d child=%d result=%d", callIdx, firstChild, resultIdx)
+	}
+	if last := events[len(events)-1]; last.Kind != agentkit.EventFinish || last.Depth != 0 || last.Result.Output != "parent done" || last.Result.Usage.TotalTokens != 60 {
+		t.Fatalf("last = %+v", last)
+	}
+
+	for _, e := range run(false) {
+		if e.Depth != 0 || e.Parent != "" {
+			t.Fatalf("event forwarded without the option: %+v", e)
+		}
+	}
+}

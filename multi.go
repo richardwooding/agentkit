@@ -15,8 +15,10 @@ import (
 // AsToolOption configures AsTool.
 type AsToolOption func(*subAgentTool)
 
-// WithForwardEvents is reserved for surfacing child events in the parent
-// stream; child runs are currently reported through Hooks only.
+// WithForwardEvents surfaces the child's events in the parent's stream. Every
+// child event, its EventFinish included, is forwarded with the child's own
+// RunID and Depth and with Parent set to the enclosing run's ID. Without the
+// option, or when the parent is not streaming, the child runs silently.
 func WithForwardEvents() AsToolOption { return func(t *subAgentTool) { t.forward = true } }
 
 type subAgentArgs struct {
@@ -43,11 +45,31 @@ func (t *subAgentTool) Call(ctx context.Context, args json.RawMessage) (Output, 
 			return Errorf("invalid arguments: %v", err), fmt.Errorf("%w: %w", ErrInvalidArgs, err)
 		}
 	}
-	res, err := t.agent.RunMessages(ctx, []core.Message{core.UserText(in.Input)})
+	res, err := t.run(ctx, []core.Message{core.UserText(in.Input)})
 	if err != nil {
 		return Errorf("%s failed: %v", t.agent.name, err), err
 	}
 	return Text(res.Output), nil
+}
+
+func (t *subAgentTool) run(ctx context.Context, msgs []core.Message) (*Result, error) {
+	emit, parentID, ok := parentEmitter(ctx)
+	if !t.forward || !ok {
+		return t.agent.RunMessages(ctx, msgs)
+	}
+	var (
+		res    *Result
+		runErr error
+	)
+	for e, err := range t.agent.streamRun(ctx, msgs, runConfig{}, nil) {
+		e.Parent = parentID
+		if e.Kind == EventFinish {
+			e.Err = err
+			res, runErr = e.Result, err
+		}
+		emit(e)
+	}
+	return res, runErr
 }
 
 // AsTool exposes an agent as a tool taking {"input": string}. The child runs
