@@ -48,6 +48,7 @@ type runConfig struct {
 	parts      []core.Part
 	hooks      Hooks
 	outputMode OutputMode
+	inbox      *Inbox
 }
 
 // WithSession loads history from the agent's Store before the run and appends

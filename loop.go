@@ -104,6 +104,7 @@ func (r *run) step(ctx context.Context) bool {
 		r.stopWith(StopError, err)
 		return false
 	}
+	r.drainInbox()
 	resp, err := r.callModel(ctx)
 	if err != nil {
 		r.stopWith(stopReasonFor(err), err)
@@ -138,8 +139,23 @@ func (r *run) noToolCalls(resp *core.Response) bool {
 		r.res.StopReason = StopFinalAnswer
 		return false
 	}
+	if r.drainInbox() {
+		return true
+	}
 	r.res.StopReason = StopCompleted
 	return false
+}
+
+// drainInbox appends queued user messages and reports whether there were any.
+func (r *run) drainInbox() bool {
+	if r.cfg.inbox == nil {
+		return false
+	}
+	msgs := r.cfg.inbox.drain()
+	for _, m := range msgs {
+		r.append(m)
+	}
+	return len(msgs) > 0
 }
 
 func (r *run) toolCalls(ctx context.Context, calls []core.ToolCall) bool {
