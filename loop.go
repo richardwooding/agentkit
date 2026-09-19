@@ -244,7 +244,7 @@ func (r *run) callTool(ctx context.Context, tc core.ToolCall) core.ToolResult {
 	if r.hooks.OnToolResult != nil {
 		r.hooks.OnToolResult(ToolResultInfo{Call: call, Output: out, Err: err, Duration: dur})
 	}
-	r.send(Event{Kind: EventToolResult, ToolCall: &tc, ToolResult: &tr, Duration: dur})
+	r.send(Event{Kind: EventToolResult, ToolCall: &tc, ToolResult: &tr, Duration: dur, Err: err})
 	return tr
 }
 
@@ -322,7 +322,7 @@ func (r *run) send(e Event) {
 	if r.emit == nil {
 		return
 	}
-	e.RunID, e.Agent, e.Step = r.runID, r.agent.name, r.res.Steps
+	e.RunID, e.Agent, e.Step, e.Depth = r.runID, r.agent.name, r.res.Steps, r.depth
 	r.emit(e)
 }
 
@@ -393,6 +393,8 @@ func (r *run) callModelWithRetry(ctx context.Context) (*core.Response, error) {
 		}
 		if err == nil {
 			r.model = r.model.Add(resp.Usage)
+			u := resp.Usage
+			r.send(Event{Kind: EventUsage, Usage: &u, Duration: time.Since(start), FinishReason: resp.FinishReason})
 			return resp, nil
 		}
 		if emitted || attempt >= policy.MaxAttempts || !policy.Retryable(err) {

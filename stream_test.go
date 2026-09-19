@@ -34,8 +34,8 @@ func TestStreamEvents(t *testing.T) {
 		t.Fatal(finalErr)
 	}
 	want := []agentkit.EventKind{
-		agentkit.EventStep, agentkit.EventToolCall, agentkit.EventToolResult, agentkit.EventStep,
-		agentkit.EventReasoning, agentkit.EventText, agentkit.EventText, agentkit.EventFinish,
+		agentkit.EventStep, agentkit.EventUsage, agentkit.EventToolCall, agentkit.EventToolResult, agentkit.EventStep,
+		agentkit.EventReasoning, agentkit.EventText, agentkit.EventText, agentkit.EventUsage, agentkit.EventFinish,
 	}
 	if got := kinds(events); len(got) != len(want) {
 		t.Fatalf("kinds = %v", got)
@@ -46,8 +46,11 @@ func TestStreamEvents(t *testing.T) {
 			}
 		}
 	}
-	if events[1].ToolCall.ID != "c1" || events[2].ToolResult.Text() != "3" || events[2].Duration <= 0 {
-		t.Fatalf("tool events = %+v %+v", events[1], events[2])
+	if events[2].ToolCall.ID != "c1" || events[3].ToolResult.Text() != "3" || events[3].Duration <= 0 || events[3].Err != nil {
+		t.Fatalf("tool events = %+v %+v", events[2], events[3])
+	}
+	if u := events[1]; u.Usage == nil || u.Usage.TotalTokens != 15 || u.FinishReason != core.FinishToolCalls || u.Depth != 0 {
+		t.Fatalf("usage event = %+v", u)
 	}
 	fin := events[len(events)-1]
 	if fin.Result == nil || fin.Result.Output != "three" || fin.Result.StopReason != agentkit.StopCompleted || fin.RunID == "" {
@@ -95,5 +98,41 @@ func TestStreamBreakAndError(t *testing.T) {
 	}
 	if lastErr == nil || last.Kind != agentkit.EventFinish || last.Result == nil || last.Result.StopReason != agentkit.StopError {
 		t.Fatalf("last = %+v err = %v", last, lastErr)
+	}
+}
+
+func TestStreamParallelToolsUnderRace(t *testing.T) {
+	client := &scriptedStream{&scripted{responses: []*core.Response{
+		toolCalls(call("c1", "add", `{"A":1,"B":1}`), call("c2", "add", `{"A":2,"B":2}`), call("c3", "add", `{"A":3,"B":3}`), call("c4", "add", `{"A":4,"B":4}`)),
+		text("done"),
+	}}}
+	a, _ := agentkit.NewFromClient(client, agentkit.WithTools(adder()), agentkit.WithParallel(4))
+	var events []agentkit.Event
+	for e, err := range a.Stream(context.Background(), "go") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		events = append(events, e)
+	}
+	calls, results := 0, 0
+	for _, e := range events {
+		switch e.Kind {
+		case agentkit.EventToolCall:
+			calls++
+		case agentkit.EventToolResult:
+			results++
+		default:
+		}
+	}
+	if calls != 4 || results != 4 {
+		t.Fatalf("calls=%d results=%d kinds=%v", calls, results, kinds(events))
+	}
+	if last := events[len(events)-1]; last.Kind != agentkit.EventFinish || last.Result == nil || last.Result.Output != "done" {
+		t.Fatalf("last = %+v", last)
+	}
+	for _, e := range events[:len(events)-1] {
+		if e.Kind == agentkit.EventFinish {
+			t.Fatal("more than one finish event")
+		}
 	}
 }

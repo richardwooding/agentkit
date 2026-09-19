@@ -134,7 +134,7 @@ func (a *Agent) streamRun(ctx context.Context, msgs []core.Message, cfg runConfi
 			}
 		}
 		if !stopped {
-			yield(Event{Kind: EventFinish, RunID: res.RunID, Agent: res.Agent, Result: res}, runErr)
+			yield(Event{Kind: EventFinish, RunID: res.RunID, Agent: res.Agent, Depth: r.depth, Result: res}, runErr)
 		}
 	}
 }
