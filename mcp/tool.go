@@ -19,11 +19,20 @@ const (
 	defaultSchema = `{"type":"object"}`
 )
 
+// Annotated is implemented by the tools Server.Tools returns. Annotations are
+// the server's own claims about a tool (read-only, destructive, idempotent,
+// open-world, title) and nothing verifies them: show them to a person or use
+// them to tighten a policy, never to skip approval.
+type Annotated interface {
+	Annotations() *sdk.ToolAnnotations
+}
+
 type tool struct {
-	session    *sdk.ClientSession
-	def        core.Tool
-	original   string
-	sequential bool
+	session     *sdk.ClientSession
+	def         core.Tool
+	original    string
+	sequential  bool
+	annotations *sdk.ToolAnnotations
 }
 
 func newTool(session *sdk.ClientSession, t *sdk.Tool, cfg config) *tool {
@@ -34,10 +43,14 @@ func newTool(session *sdk.ClientSession, t *sdk.Tool, cfg config) *tool {
 			Description: t.Description,
 			Parameters:  schema(t.InputSchema),
 		},
-		original:   t.Name,
-		sequential: cfg.sequential,
+		original:    t.Name,
+		sequential:  cfg.sequential,
+		annotations: t.Annotations,
 	}
 }
+
+// Annotations implements Annotated; it is nil when the server sent none.
+func (t *tool) Annotations() *sdk.ToolAnnotations { return t.annotations }
 
 // Definition implements agentkit.Tool.
 func (t *tool) Definition() core.Tool { return t.def }

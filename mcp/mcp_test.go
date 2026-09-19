@@ -55,6 +55,10 @@ func newTestServer() *sdk.Server {
 				&sdk.AudioContent{Data: []byte{1, 2}, MIMEType: "audio/wav"},
 			}}, nil
 		})
+	sdk.AddTool(srv, &sdk.Tool{Name: "annotated", Description: "Carries hints", Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true, Title: "Read only", OpenWorldHint: new(false)}},
+		func(context.Context, *sdk.CallToolRequest, any) (*sdk.CallToolResult, any, error) {
+			return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: "hinted"}}}, nil, nil
+		})
 	sdk.AddTool(srv, &sdk.Tool{Name: "fs.read/file", Description: "Awkward name"},
 		func(context.Context, *sdk.CallToolRequest, any) (*sdk.CallToolResult, any, error) {
 			return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: "read"}}}, nil, nil
@@ -98,7 +102,7 @@ func lookup(t *testing.T, ts agentkit.Toolset, name string) agentkit.Tool {
 }
 
 func TestToolsNames(t *testing.T) {
-	want := []string{"echo", "fail", "fs_read_file", "image", "resource", "structured", "typed"}
+	want := []string{"annotated", "echo", "fail", "fs_read_file", "image", "resource", "structured", "typed"}
 	got := tools(t).Names()
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("names = %v, want %v", got, want)
@@ -275,6 +279,21 @@ func TestSequential(t *testing.T) {
 	}
 	if !seq(lookup(t, tools(t, agentmcp.WithSequential()), "echo")) {
 		t.Error("Sequential() = false with WithSequential")
+	}
+}
+
+func TestAnnotations(t *testing.T) {
+	ts := tools(t)
+	hinted, ok := lookup(t, ts, "annotated").(agentmcp.Annotated)
+	if !ok {
+		t.Fatal("tool does not implement Annotated")
+	}
+	ann := hinted.Annotations()
+	if ann == nil || !ann.ReadOnlyHint || ann.Title != "Read only" || ann.OpenWorldHint == nil || *ann.OpenWorldHint {
+		t.Fatalf("annotations = %+v", ann)
+	}
+	if plain := lookup(t, ts, "echo").(agentmcp.Annotated); plain.Annotations() != nil {
+		t.Fatalf("echo annotations = %+v", plain.Annotations())
 	}
 }
 
