@@ -44,10 +44,12 @@ memory.go      Store, MemoryStore, FileStore (atomic JSON per session)
 compact.go     Estimator, Compactor, Window, Summarize, Chain, turn splitting
 retrieve.go    Retriever, VectorMemory, Recall tool
 multi.go       AsTool, Handoff, Map
+pin.go         Pinned tool results re-sent in the system prompt after compaction (visible())
+skills/        Agent Skills (agentskills.io) over fs.FS: Parse/LoadAll/Set, Prompt, Tool/FileTool, Use
 internal/pool  bounded ordered worker pool; internal/atomicfile
 slogx/         Hooks adapter for log/slog
 mcp/           nested module: Connect, Server.Tools → agentkit.Toolset
-examples/      tools, typed, multiagent (+ internal/fake provider)
+examples/      tools, typed, multiagent, skills (+ internal/fake provider)
 docs/          gloam Pages site
 ```
 
@@ -80,6 +82,14 @@ docs/          gloam Pages site
   structs → `WithStrict` is opt-in); enums only via `TypeSchemas` (`WithEnum`); maps with
   non-string keys, funcs and channels fail (`Func` panics, `NewFunc` errors). Validation
   decodes args to `any`, validates, then decodes to `In`.
+- **Pinned tool results live outside the transcript.** `run.pins` is filled from loaded history
+  and from each step's results (main goroutine only); `visible()` appends the content of pins
+  whose call ID is no longer in `r.msgs` to the system message of the outgoing request. `r.msgs`,
+  `Result.Messages` and the store never contain the copy, so pairing and turn invariants hold.
+  `buildRequest` and every compaction estimate must use `visible()`, not `r.msgs`.
+- **`skills` parses frontmatter by hand** (a YAML subset: scalars, `|`/`>` blocks, one-level
+  `metadata` map) to keep the root free of a YAML dependency. Skill names are exposed to the
+  model as a schema `enum` built like `Handoff`'s, because `WithEnum` keys on a Go type.
 - **Hooks fire from pool goroutines** when `WithParallel(n > 1)`; user hooks must be safe.
 - **Package name clash**: `agentkit/mcp` vs the SDK's `mcp`; the SDK is imported as `sdk`
   inside the package and users alias ours (`agentmcp`).

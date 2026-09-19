@@ -249,3 +249,72 @@ func TestCancelledParallelToolsKeepPairs(t *testing.T) {
 		t.Fatalf("results = %+v", results)
 	}
 }
+
+type pinnedTool struct{ agentkit.Tool }
+
+func (pinnedTool) Pinned() bool { return true }
+
+func TestPinnedSurvivesCompaction(t *testing.T) {
+	client := &scripted{responses: []*core.Response{
+		toolCalls(call("c1", "manual", `{}`)),
+		text("first"),
+		text("second"),
+	}}
+	manual := pinnedTool{agentkit.Func("manual", "load the manual", func(context.Context, struct{}) (string, error) {
+		return "MANUAL: always answer in haiku", nil
+	})}
+	store := agentkit.NewMemoryStore()
+	a, err := agentkit.NewFromClient(client,
+		agentkit.WithInstructions("be terse"),
+		agentkit.WithTools(manual),
+		agentkit.WithStore(store),
+		agentkit.WithCompactor(agentkit.Window(1)),
+		agentkit.WithContextWindow(20),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Run(context.Background(), "q1", agentkit.WithSession("s")); err != nil {
+		t.Fatal(err)
+	}
+	res, err := a.Run(context.Background(), "q2", agentkit.WithSession("s"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := client.seen[len(client.seen)-1]
+	sys := last.Messages[0]
+	if sys.Role != core.RoleSystem || strings.Count(sys.Text(), "MANUAL: always answer in haiku") != 1 || !strings.HasPrefix(sys.Text(), "be terse\n\n") {
+		t.Fatalf("system prompt after compaction = %q", sys.Text())
+	}
+	for _, m := range last.Messages[1:] {
+		if len(m.ToolResults()) > 0 {
+			t.Fatalf("original tool result should have been compacted away: %+v", last.Messages)
+		}
+	}
+	for _, m := range res.Messages {
+		if m.Role == core.RoleSystem && strings.Contains(m.Text(), "MANUAL") {
+			t.Fatalf("transcript must not contain the pinned copy: %q", m.Text())
+		}
+	}
+	early := client.seen[0]
+	if strings.Contains(early.Messages[0].Text(), "MANUAL") {
+		t.Fatalf("pin re-sent while the result was still present: %q", early.Messages[0].Text())
+	}
+}
+
+func TestAdditionalInstructions(t *testing.T) {
+	client := &scripted{responses: []*core.Response{text("ok")}}
+	a, err := agentkit.NewFromClient(client,
+		agentkit.WithAdditionalInstructions("Skills: none", ""),
+		agentkit.WithInstructions("base"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Run(context.Background(), "hi"); err != nil {
+		t.Fatal(err)
+	}
+	if got := client.seen[0].Messages[0].Text(); got != "base\n\nSkills: none" {
+		t.Fatalf("system = %q", got)
+	}
+}

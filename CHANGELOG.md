@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `skills` package: load [Agent Skills](https://agentskills.io) from any `fs.FS`, render the
+  catalog for the system prompt, and expose the `skill` and `skill_file` tools via `skills.Use`.
+- `WithAdditionalInstructions` appends sections to the system prompt independent of option order.
+- `Pinned` tools: results are re-sent in the system prompt once compaction drops their turn.
+
 ## [0.1.0] - 2026-09-18
 
 ### Added

@@ -21,6 +21,15 @@ type Sequential interface {
 	Sequential() bool
 }
 
+// Pinned is implemented by tools whose successful results must stay visible to
+// the model after compaction. When a compactor drops the turn holding such a
+// result, the loop re-sends its content inside the system prompt of every later
+// request; the transcript and the session store are not changed. Pinned content
+// can never be compacted away, so keep it small.
+type Pinned interface {
+	Pinned() bool
+}
+
 // Output is what a tool hands back to the model. IsError marks a tool-level
 // failure the model should see; a Go error from Call means the same and is also
 // reported to Hooks.
@@ -183,10 +192,18 @@ func (r renamed) Definition() core.Tool {
 // Sequential implements Sequential.
 func (r renamed) Sequential() bool { return isSequential(r.Tool) }
 
+// Pinned implements Pinned.
+func (r renamed) Pinned() bool { return isPinned(r.Tool) }
+
 // Rename returns t exposed under a different name.
 func Rename(t Tool, name string) Tool { return renamed{Tool: t, name: name} }
 
 func isSequential(t Tool) bool {
 	s, ok := t.(Sequential)
 	return ok && s.Sequential()
+}
+
+func isPinned(t Tool) bool {
+	p, ok := t.(Pinned)
+	return ok && p.Pinned()
 }

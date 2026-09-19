@@ -11,15 +11,15 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 })(window,document,'script','dataLayer','GTM-NB62JPNJ');</script>
 <!-- End Google Tag Manager -->
 <title>agentkit — an agent framework for Go on llmkit</title>
-<meta name="description" content="Agent framework for Go on top of llmkit: tools typed as Go structs with generated JSON Schema, a budgeted tool-calling loop that streams events, conversation memory with compaction, MCP servers as tools, and multi-agent handoffs.">
+<meta name="description" content="Agent framework for Go on top of llmkit: tools typed as Go structs with generated JSON Schema, a budgeted tool-calling loop that streams events, conversation memory with compaction, Agent Skills, MCP servers as tools, and multi-agent handoffs.">
 <meta property="og:url" content="https://richardwooding.github.io/agentkit/">
 <meta property="og:site_name" content="Richard Wooding">
 <meta property="og:title" content="agentkit">
-<meta property="og:description" content="Agent framework for Go: typed tools, budgeted loop, streaming events, memory, MCP tools, handoffs — any model llmkit can reach.">
+<meta property="og:description" content="Agent framework for Go: typed tools, budgeted loop, streaming events, memory, skills, MCP tools, handoffs — any model llmkit can reach.">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="agentkit">
-<meta name="twitter:description" content="Agent framework for Go: typed tools, budgeted loop, streaming events, memory, MCP tools, handoffs — any model llmkit can reach.">
+<meta name="twitter:description" content="Agent framework for Go: typed tools, budgeted loop, streaming events, memory, skills, MCP tools, handoffs — any model llmkit can reach.">
 <link rel="canonical" href="https://richardwooding.github.io/agentkit/">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%23161b22'/><circle cx='12' cy='12' r='3' fill='%23bd93ff'/><circle cx='5' cy='6' r='2' fill='%23a371f7'/><circle cx='19' cy='6' r='2' fill='%23a371f7'/><circle cx='5' cy='18' r='2' fill='%23a371f7'/><circle cx='19' cy='18' r='2' fill='%23a371f7'/><path d='M7 7l3 3M17 7l-3 3M7 17l3-3M17 17l-3-3' stroke='%23d2b3ff' stroke-width='1.5'/></svg>">
 <script>try{var t=localStorage.getItem("gl-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
@@ -64,7 +64,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       <div>
         <p class="gl-eyebrow">go · agents · built on llmkit</p>
         <h1>Agents that stay <span class="gl-grad">inside their budget.</span></h1>
-        <p class="sub">Write a tool as a Go function and agentkit derives its JSON Schema, validates every call, runs the model/tool loop with step, token and time budgets, and streams what happens. Memory, MCP servers and multi-agent handoffs are one option each. Any of llmkit's twelve providers, by model name.</p>
+        <p class="sub">Write a tool as a Go function and agentkit derives its JSON Schema, validates every call, runs the model/tool loop with step, token and time budgets, and streams what happens. Memory, Agent Skills, MCP servers and multi-agent handoffs are one option each. Any of llmkit's twelve providers, by model name.</p>
         <div class="gl-cta">
           <a class="gl-btn primary" href="#install">Install</a>
           <a class="gl-btn ghost" href="https://pkg.go.dev/github.com/richardwooding/agentkit">Go Reference</a>
@@ -121,6 +121,10 @@ res, _ := agent.Run(ctx, <span class="ok">"Weather in Cape Town?"</span>)
           <h3><span class="gl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M8 8l3 7M16 8l-3 7"/></svg></span>Multi-agent &amp; MCP</h3>
           <p>Sub-agents as tools, Swarm-style handoffs, bounded <code>Map</code> fan-out — and every tool of an MCP server, via the nested <code>agentkit/mcp</code> module.</p>
         </div>
+        <div class="gl-card">
+          <h3><span class="gl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h5"/></svg></span>Skills</h3>
+          <p><a href="https://agentskills.io">Agent Skills</a> from any <code>fs.FS</code>: the catalog goes in the system prompt, <code>skill</code> loads the full <code>SKILL.md</code> on demand and stays pinned through compaction, <code>skill_file</code> reads bundled references.</p>
+        </div>
       </div>
     </div>
   </section>
@@ -150,7 +154,7 @@ forecast, res, err := agentkit.Run[Forecast](ctx, agent,
       <ul class="gl-badges" aria-label="API surface" style="margin-top:26px">
         <li class="gl-lang">Func</li><li class="gl-lang">New</li><li class="gl-lang">Run</li><li class="gl-lang">Stream</li>
         <li class="gl-lang">Run[T]</li><li class="gl-lang">Budget</li><li class="gl-lang">Approve</li><li class="gl-lang">Window</li>
-        <li class="gl-lang">Summarize</li><li class="gl-lang">AsTool</li><li class="gl-lang">Handoff</li><li class="gl-lang">Map</li>
+        <li class="gl-lang">Summarize</li><li class="gl-lang">AsTool</li><li class="gl-lang">Handoff</li><li class="gl-lang">Map</li><li class="gl-lang">skills.Use</li>
       </ul>
     </div>
   </section>

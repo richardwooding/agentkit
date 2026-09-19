@@ -3,6 +3,7 @@ package agentkit
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/richardwooding/llmkit"
 	"github.com/richardwooding/llmkit/core"
@@ -13,6 +14,7 @@ import (
 type Agent struct {
 	name         string
 	instructions string
+	extra        []string
 	chat         core.Chatter
 	stream       core.Streamer
 	tools        Toolset
@@ -85,6 +87,7 @@ func (a *Agent) apply(opts []Option) error {
 }
 
 func (a *Agent) finish() (*Agent, error) {
+	a.instructions = joinSections(a.instructions, a.extra)
 	if a.retriever != nil {
 		a.tools = append(a.tools, Recall(a.retriever, a.retrieveK))
 	}
@@ -117,6 +120,13 @@ func WithName(name string) Option { return func(a *Agent) error { a.name = name;
 // WithInstructions sets the system prompt.
 func WithInstructions(s string) Option {
 	return func(a *Agent) error { a.instructions = s; return nil }
+}
+
+// WithAdditionalInstructions appends sections to the system prompt after the
+// text set by WithInstructions, whatever the option order. Empty sections are
+// dropped; sections are separated by a blank line.
+func WithAdditionalInstructions(sections ...string) Option {
+	return func(a *Agent) error { a.extra = append(a.extra, sections...); return nil }
 }
 
 // WithTools adds tools; names must be unique across the agent.
@@ -199,4 +209,17 @@ func WithRegistry(r *llmkit.Registry) Option {
 // WithClientOptions passes options to the llmkit client (New only).
 func WithClientOptions(opts ...core.Option) Option {
 	return func(a *Agent) error { a.clientOpts = append(a.clientOpts, opts...); return nil }
+}
+
+func joinSections(base string, extra []string) string {
+	parts := make([]string, 0, len(extra)+1)
+	if base != "" {
+		parts = append(parts, base)
+	}
+	for _, e := range extra {
+		if e != "" {
+			parts = append(parts, e)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }

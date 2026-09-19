@@ -129,7 +129,8 @@ res, _ := agent.Run(ctx, "Where did we leave off?", agentkit.WithSession("richar
 
 Stores are lossless. Compaction only shapes what the model sees, whole turns at a time, and
 runs proactively near the window or reactively when a provider reports the context is too
-long. `VectorMemory` builds on any llmkit `Embedder` (and optionally a `Reranker`).
+long. A tool that implements `Pinned` keeps its results visible: once compaction drops the
+turn holding one, the content is re-sent in the system prompt of the outgoing request. `VectorMemory` builds on any llmkit `Embedder` (and optionally a `Reranker`).
 
 ### Multi-agent
 
@@ -160,6 +161,24 @@ defer fs.Close()
 tools, err := fs.Tools(ctx)
 agent, _ := agentkit.New("gpt-5", agentkit.WithTools(tools...))
 ```
+
+### Skills
+
+```go
+import "github.com/richardwooding/agentkit/skills"
+
+set, err := skills.LoadAll(os.DirFS(".agents/skills")) // any fs.FS: os.DirFS, embed.FS, ...
+agent, _ := agentkit.New("claude-sonnet-4-5",
+	agentkit.WithInstructions("You are a helpful assistant."),
+	skills.Use(set), // catalog in the system prompt + "skill" and "skill_file" tools
+)
+```
+
+[Agent Skills](https://agentskills.io) are folders with a `SKILL.md`. `Use` lists their names
+and descriptions in the system prompt; the model activates one by calling `skill` and gets the
+full body (pinned, so it survives compaction), then reads bundled files with `skill_file`.
+`Merge` gives project skills precedence over user skills; `Set.Problems` reports what was
+skipped or loaded with reservations. Running a skill's scripts is left to your own tools.
 
 ### Observability
 

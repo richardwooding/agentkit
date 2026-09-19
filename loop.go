@@ -39,6 +39,7 @@ type run struct {
 	stop    error
 	handoff *Agent
 	nudged  bool
+	pins    []pin
 }
 
 func newRun(a *Agent, cfg runConfig, emit func(Event), typed *typedOutput) *run {
@@ -81,6 +82,7 @@ func (r *run) prepare(ctx context.Context, input []core.Message) (context.Contex
 			r.res.StopReason = StopError
 		}
 		r.msgs = append(r.msgs, history...)
+		r.collectPins(history)
 	}
 	r.msgs = append(r.msgs, input...)
 	r.newMsgs = append(r.newMsgs, input...)
@@ -154,6 +156,7 @@ func (r *run) toolCalls(ctx context.Context, calls []core.ToolCall) bool {
 	results := r.execTools(ctx, calls)
 	r.res.ToolCalls += len(calls)
 	r.append(core.ToolResults(results...))
+	r.collectPins(r.msgs[len(r.msgs)-1:])
 	switch {
 	case r.typed != nil && r.typed.done:
 		r.res.StopReason = StopFinalAnswer
@@ -343,7 +346,7 @@ func stopReasonFor(err error) StopReason {
 // buildRequest assembles the request for the current step.
 func (r *run) buildRequest() *core.Request {
 	req := r.agent.template
-	req.Messages = r.msgs
+	req.Messages = r.visible()
 	req.Tools = r.agent.tools.Definitions()
 	if r.typed != nil {
 		r.typed.apply(&req, r.nudged)
@@ -360,7 +363,7 @@ func (r *run) callModel(ctx context.Context) (*core.Response, error) {
 			return resp, nil
 		case errors.Is(err, core.ErrContextLength) && !compacted && r.origin.compactor != nil:
 			compacted = true
-			if cerr := r.compact(ctx, compactContextLength, r.origin.estimator.Estimate(r.msgs)/2); cerr != nil {
+			if cerr := r.compact(ctx, compactContextLength, r.origin.estimator.Estimate(r.visible())/2); cerr != nil {
 				return nil, cerr
 			}
 		case errors.Is(err, core.ErrUnsupported) && r.typed != nil && r.typed.mode == OutputSchema:
@@ -447,20 +450,20 @@ func (r *run) compactProactively(ctx context.Context) error {
 	if r.origin.window <= 0 || r.origin.compactor == nil {
 		return nil
 	}
-	if r.origin.estimator.Estimate(r.msgs) <= r.origin.window*9/10 {
+	if r.origin.estimator.Estimate(r.visible()) <= r.origin.window*9/10 {
 		return nil
 	}
 	return r.compact(ctx, compactProactive, r.origin.window*7/10)
 }
 
 func (r *run) compact(ctx context.Context, reason string, budget int) error {
-	before := r.origin.estimator.Estimate(r.msgs)
+	before := r.origin.estimator.Estimate(r.visible())
 	msgs, err := r.origin.compactor.Compact(ctx, r.msgs, budget)
 	if err != nil {
 		return fmt.Errorf("agentkit: compact history: %w", err)
 	}
 	r.msgs = msgs
-	after := r.origin.estimator.Estimate(r.msgs)
+	after := r.origin.estimator.Estimate(r.visible())
 	if r.hooks.OnCompact != nil {
 		r.hooks.OnCompact(CompactInfo{RunID: r.runID, Agent: r.agent.name, Reason: reason, Before: before, After: after})
 	}

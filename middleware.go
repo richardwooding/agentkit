@@ -36,6 +36,9 @@ func (w wrapped) Call(ctx context.Context, args json.RawMessage) (Output, error)
 // Sequential implements Sequential.
 func (w wrapped) Sequential() bool { return isSequential(w.Tool) }
 
+// Pinned implements Pinned.
+func (w wrapped) Pinned() bool { return isPinned(w.Tool) }
+
 func middleware(fn func(ctx context.Context, next Tool, args json.RawMessage) (Output, error)) Middleware {
 	return func(t Tool) Tool { return wrapped{Tool: t, call: fn} }
 }
