@@ -12,6 +12,7 @@ All notable changes to this project are documented here. The format follows
   and `ApproveWith(Approver) Middleware`, which emits `EventApprovalRequest` /
   `EventApprovalResult` in streaming runs. Rewritten arguments reach the tool but are not
   written back into the transcript. `Approve(fn)` is now built on it.
+- `WithCache(core.CacheConfig)` sets prompt-cache breakpoints on every request (llmkit v0.3.0).
 - `Progress(ctx, text)` and `ProgressWriter(ctx)` for interim tool output as `EventToolProgress`.
 - `EventUsage` after every successful model call with that call's own usage, duration and
   finish reason; `Event` gains `Depth`, `Parent`, `Usage`, `FinishReason` and `Decision`, and

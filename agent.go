@@ -213,6 +213,14 @@ func WithReasoning(r core.ReasoningConfig) Option {
 	return func(a *Agent) error { a.template.Reasoning = &r; return nil }
 }
 
+// WithCache asks providers with explicit prompt caching to place cache
+// breakpoints on every request; see core.CacheConfig. {System: true, Turns: 1}
+// keeps the instructions and tool definitions cached across a whole session
+// while the trailing turn moves.
+func WithCache(c core.CacheConfig) Option {
+	return func(a *Agent) error { a.template.Cache = &c; return nil }
+}
+
 // WithRequestExtra merges raw fields into every request body.
 func WithRequestExtra(extra map[string]any) Option {
 	return func(a *Agent) error { a.template.Extra = extra; return nil }

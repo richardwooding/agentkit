@@ -222,6 +222,17 @@ full body (pinned, so it survives compaction), then reads bundled files with `sk
 `Merge` gives project skills precedence over user skills; `Set.Problems` reports what was
 skipped or loaded with reservations. Running a skill's scripts is left to your own tools.
 
+### Prompt caching
+
+```go
+agentkit.WithCache(core.CacheConfig{System: true, Turns: 1})
+```
+
+Providers with explicit prompt caching (Anthropic) get `cache_control` breakpoints after the
+instructions and tool definitions and on the trailing user turn, so the stable prefix is served
+from cache on every step. Other providers ignore the hint. Usage reports `CachedInputTokens` and
+`CacheWriteTokens`.
+
 ### Observability
 
 ```go

@@ -46,3 +46,18 @@ func TestAgentWith(t *testing.T) {
 		t.Fatalf("direct call: err=%v wraps=%d", err, wraps.Load())
 	}
 }
+
+func TestWithCache(t *testing.T) {
+	client := &scripted{responses: []*core.Response{text("ok")}}
+	agent, err := agentkit.NewFromClient(client, agentkit.WithCache(core.CacheConfig{System: true, Turns: 1}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := agent.Run(context.Background(), "hi"); err != nil {
+		t.Fatal(err)
+	}
+	got := client.seen[0].Cache
+	if got == nil || !got.System || got.Turns != 1 {
+		t.Fatalf("request cache = %+v, want {System:true Turns:1}", got)
+	}
+}
