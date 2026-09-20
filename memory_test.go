@@ -188,6 +188,35 @@ func TestFileStoreTornTail(t *testing.T) {
 	}
 }
 
+// TestFileStoreTornTailLongerThanAChunk covers the case repairTail's
+// backwards scan exists for. A single record can be far larger than the scan
+// window — a tool result holding a whole file — so a torn line that long must
+// still be found, rather than the scan stopping at the first window it reads.
+func TestFileStoreTornTailLongerThanAChunk(t *testing.T) {
+	dir := t.TempDir()
+	store := agentkit.NewFileStore(dir)
+	ctx := context.Background()
+	if err := store.Append(ctx, "s", core.UserText("q")); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "s.jsonl"), os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A torn line spanning several 64 KiB scan windows, with no newline in it.
+	if _, err := f.WriteString(`{"t":"2026-09-19T10:00:00Z","m":{"role":"user","content":"` + strings.Repeat("x", 300<<10)); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	if err := store.Append(ctx, "s", core.UserText("q2")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Load(ctx, "s")
+	if err != nil || len(got) != 2 || got[0].Text() != "q" || got[1].Text() != "q2" {
+		t.Fatalf("after repairing a %d-byte torn line = %+v %v", 300<<10, got, err)
+	}
+}
+
 func TestMemoryStoreList(t *testing.T) {
 	store := agentkit.NewMemoryStore()
 	ctx := context.Background()

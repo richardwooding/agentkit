@@ -323,21 +323,69 @@ func (s *FileStore) migrate(sessionID string, data []byte) (bool, error) {
 	return true, nil
 }
 
+// tailScanChunk is how much repairTail reads at a time when it has to look
+// for the last line boundary.
+const tailScanChunk = 64 << 10
+
 // repairTail truncates a torn trailing line so the next append starts on a
 // line boundary instead of gluing itself to the fragment.
+//
+// It reads the final byte rather than the whole file. Append calls this every
+// time, and a session grows with every call, so reading all of it made
+// appending to a session cost time proportional to its size — which no caller
+// noticed while a whole run was one append, and every caller would notice now
+// that a run appends once per step. A file that was closed cleanly ends in a
+// newline, so the common case is one byte.
 func (s *FileStore) repairTail(sessionID string) error {
-	b, err := os.ReadFile(s.path(sessionID))
+	f, err := os.Open(s.path(sessionID))
 	if err != nil {
 		return fmt.Errorf("agentkit: read session: %w", err)
 	}
-	if len(b) == 0 || b[len(b)-1] == '\n' {
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("agentkit: read session: %w", err)
+	}
+	size := info.Size()
+	if size == 0 {
 		return nil
 	}
-	keep := bytes.LastIndexByte(b, '\n') + 1
-	if err := os.Truncate(s.path(sessionID), int64(keep)); err != nil {
+	var last [1]byte
+	if _, err := f.ReadAt(last[:], size-1); err != nil {
+		return fmt.Errorf("agentkit: read session: %w", err)
+	}
+	if last[0] == '\n' {
+		return nil
+	}
+	keep, err := lastLineEnd(f, size)
+	if err != nil {
+		return err
+	}
+	if err := os.Truncate(s.path(sessionID), keep); err != nil {
 		return fmt.Errorf("agentkit: repair session: %w", err)
 	}
 	return nil
+}
+
+// lastLineEnd returns the offset just past the file's last newline, scanning
+// backwards. It walks to the start of the file rather than giving up at a
+// window: one record can be larger than any chunk size — a tool result holding
+// a whole file, say — and a torn line that long must still be found.
+func lastLineEnd(f *os.File, size int64) (int64, error) {
+	buf := make([]byte, tailScanChunk)
+	for end := size; end > 0; {
+		start := max(end-tailScanChunk, 0)
+		n := int(end - start)
+		if _, err := f.ReadAt(buf[:n], start); err != nil {
+			return 0, fmt.Errorf("agentkit: read session: %w", err)
+		}
+		if i := bytes.LastIndexByte(buf[:n], '\n'); i >= 0 {
+			return start + int64(i) + 1, nil
+		}
+		end = start
+	}
+	// No newline anywhere: the whole file is one torn line.
+	return 0, nil
 }
 
 // Delete removes the session file (and any legacy file).
