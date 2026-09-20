@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"slices"
 	"sync"
 
 	"github.com/richardwooding/llmkit/core"
+
+	"github.com/richardwooding/agentkit"
 )
 
 // scripted returns canned responses (or errors) in order and records what it
@@ -106,4 +109,45 @@ func (f fakeEmbedder) Embed(_ context.Context, req *core.EmbedRequest) (*core.Em
 		out.Embeddings = append(out.Embeddings, v)
 	}
 	return out, nil
+}
+
+// recordingStore wraps a Store and keeps each Append call's batch, so a test
+// can see how a run's messages were written and not just what ended up
+// stored. failOn makes the Nth Append (1-based) fail.
+type recordingStore struct {
+	mu      sync.Mutex
+	inner   agentkit.Store
+	batches [][]core.Message
+	failOn  int
+	err     error
+	loadErr error
+}
+
+func newRecordingStore() *recordingStore {
+	return &recordingStore{inner: agentkit.NewMemoryStore()}
+}
+
+func (s *recordingStore) Load(ctx context.Context, id string) ([]core.Message, error) {
+	if s.loadErr != nil {
+		return nil, s.loadErr
+	}
+	return s.inner.Load(ctx, id)
+}
+
+func (s *recordingStore) Append(ctx context.Context, id string, msgs ...core.Message) error {
+	s.mu.Lock()
+	s.batches = append(s.batches, slices.Clone(msgs))
+	n, failOn, err := len(s.batches), s.failOn, s.err
+	s.mu.Unlock()
+	if failOn == n {
+		return err
+	}
+	return s.inner.Append(ctx, id, msgs...)
+}
+
+// appends returns the recorded batches.
+func (s *recordingStore) appends() [][]core.Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.batches)
 }

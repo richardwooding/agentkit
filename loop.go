@@ -32,6 +32,7 @@ type run struct {
 	start   time.Time
 	msgs    []core.Message
 	newMsgs []core.Message
+	saved   int // how much of newMsgs the store already holds
 	res     Result
 	model   core.Usage
 	sink    *usageSink
@@ -59,6 +60,10 @@ func (r *run) execute(ctx context.Context, input []core.Message) (*Result, error
 		if !r.step(ctx) {
 			break
 		}
+		// A completed step is a point where the transcript is consistent:
+		// every tool call the model made has its result. Record it now, so
+		// the store reflects a run while the run is still going.
+		r.flush(ctx)
 	}
 	return r.finish(ctx)
 }
@@ -313,11 +318,7 @@ func (r *run) finish(ctx context.Context) (*Result, error) {
 	if r.res.StopReason == "" {
 		r.res.StopReason = StopError
 	}
-	if r.cfg.session != "" && r.origin.store != nil && r.res.Steps > 0 {
-		if err := r.origin.store.Append(context.WithoutCancel(ctx), r.cfg.session, r.newMsgs...); err != nil && r.stop == nil {
-			r.stop = fmt.Errorf("agentkit: append session: %w", err)
-		}
-	}
+	r.flush(ctx)
 	if r.parent != nil {
 		r.parent.add(r.res.Usage)
 	}
@@ -325,6 +326,36 @@ func (r *run) finish(ctx context.Context) (*Result, error) {
 		r.hooks.OnRunEnd(&r.res, r.stop)
 	}
 	return &r.res, r.stop
+}
+
+// flush appends the messages added since the last flush to the session store.
+//
+// Call it only where the transcript is consistent — at a step boundary or at
+// the end of a run — never between a model response and its tool results: a
+// stored assistant message whose tool calls have no results is a conversation
+// no provider will accept on resume.
+//
+// Append is additive and not idempotent, so the watermark is the only thing
+// keeping a message from being written twice. A failed flush leaves it where
+// it is, so the next one (finish, at the latest) tries the same messages
+// again, and the error only becomes the run's error if the run had not
+// already failed — a store that breaks must not mask what broke first.
+//
+// Steps == 0 writes nothing at all, not even the run's input: a run that
+// never reached the model did not happen as far as the transcript goes.
+func (r *run) flush(ctx context.Context) {
+	if r.cfg.session == "" || r.origin.store == nil || r.res.Steps == 0 || r.saved >= len(r.newMsgs) {
+		return
+	}
+	// WithoutCancel: a run canceled or timed out must still record what it
+	// produced before it stopped.
+	if err := r.origin.store.Append(context.WithoutCancel(ctx), r.cfg.session, r.newMsgs[r.saved:]...); err != nil {
+		if r.stop == nil {
+			r.stop = fmt.Errorf("agentkit: append session: %w", err)
+		}
+		return
+	}
+	r.saved = len(r.newMsgs)
 }
 
 func (r *run) append(m core.Message) {

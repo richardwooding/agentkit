@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -320,5 +321,155 @@ func TestAdditionalInstructions(t *testing.T) {
 	}
 	if got := client.seen[0].Messages[0].Text(); got != "base\n\nSkills: none" {
 		t.Fatalf("system = %q", got)
+	}
+}
+
+// echoTool is a tool that returns its argument, for driving multi-step runs.
+func echoTool() agentkit.Tool {
+	return agentkit.Func("echo", "echo", func(_ context.Context, in struct {
+		S string `json:"s"`
+	},
+	) (string, error) {
+		return in.S, nil
+	})
+}
+
+// TestSessionPersistsEachStep pins that a run records itself as it goes. The
+// whole run used to be written in one Append when it finished, so nothing a
+// run produced was in the store until it was over — a session being watched
+// live showed no transcript at all.
+func TestSessionPersistsEachStep(t *testing.T) {
+	store := newRecordingStore()
+	client := &scripted{responses: []*core.Response{
+		toolCalls(call("c1", "echo", `{"s":"one"}`)),
+		toolCalls(call("c2", "echo", `{"s":"two"}`)),
+		text("done"),
+	}}
+	a, _ := agentkit.NewFromClient(client, agentkit.WithStore(store), agentkit.WithTools(echoTool()))
+	res, err := a.Run(context.Background(), "go", agentkit.WithSession("s1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	batches := store.appends()
+	if len(batches) < 3 {
+		t.Fatalf("appends = %d, want one per step: %v", len(batches), batches)
+	}
+	// The batches must be disjoint and, concatenated, exactly Result.New in
+	// order. Anything else means a message was written twice or lost.
+	var got []core.Message
+	for _, b := range batches {
+		if len(b) == 0 {
+			t.Error("an empty batch was appended")
+		}
+		got = append(got, b...)
+	}
+	if len(got) != len(res.New) {
+		t.Fatalf("appended %d messages, run produced %d", len(got), len(res.New))
+	}
+	for i := range got {
+		if !reflect.DeepEqual(got[i], res.New[i]) {
+			t.Fatalf("appended message %d is not the one the run produced:\n got %+v\nwant %+v", i, got[i], res.New[i])
+		}
+	}
+	stored, err := store.Load(context.Background(), "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(stored, res.New) {
+		t.Fatalf("stored = %+v\nwant %+v", stored, res.New)
+	}
+}
+
+// TestSessionPersistsBeforeTheRunEnds pins what a run that stopped part-way
+// leaves behind: the steps it completed, and nothing half-written. (A failed
+// run recorded its messages before this change too — what is new is that they
+// are there while the run is still going, which TestSessionPersistsEachStep
+// pins. This one guards the shape of the prefix.)
+func TestSessionPersistsBeforeTheRunEnds(t *testing.T) {
+	store := newRecordingStore()
+	client := &scripted{
+		responses: []*core.Response{toolCalls(call("c1", "echo", `{"s":"one"}`)), nil},
+		errs:      []error{nil, errors.New("model exploded")},
+	}
+	a, _ := agentkit.NewFromClient(client, agentkit.WithStore(store), agentkit.WithTools(echoTool()))
+	if _, err := a.Run(context.Background(), "go", agentkit.WithSession("s1")); err == nil {
+		t.Fatal("expected the run to fail")
+	}
+	stored, err := store.Load(context.Background(), "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The input, the assistant message with the tool call, and its result.
+	if len(stored) != 3 || stored[0].Text() != "go" || stored[2].Role != core.RoleTool {
+		t.Fatalf("stored after a failed run = %+v", stored)
+	}
+	assertPairedToolResults(t, stored)
+}
+
+// assertPairedToolResults checks agentkit's hardest invariant over a stored
+// transcript: an assistant message carrying tool calls is always followed by
+// a tool message answering every one of them. A stored prefix that breaks it
+// is a conversation no provider will accept when the session is resumed.
+func assertPairedToolResults(t *testing.T, msgs []core.Message) {
+	t.Helper()
+	for i, m := range msgs {
+		calls := m.ToolCalls()
+		if len(calls) == 0 {
+			continue
+		}
+		if i+1 >= len(msgs) || msgs[i+1].Role != core.RoleTool {
+			t.Fatalf("message %d has %d tool call(s) and no results after it: %+v", i, len(calls), msgs)
+		}
+		if got := len(msgs[i+1].ToolResults()); got != len(calls) {
+			t.Fatalf("message %d has %d tool call(s) but %d result(s)", i, len(calls), got)
+		}
+	}
+}
+
+// TestZeroStepRunPersistsNothing pins that a run which never reached the
+// model writes nothing at all, not even its input: as far as the transcript
+// is concerned it did not happen. A failed Load is the case that gets there —
+// it stops the run in prepare, before the first step.
+func TestZeroStepRunPersistsNothing(t *testing.T) {
+	store := newRecordingStore()
+	store.loadErr = errors.New("unreadable session")
+	client := &scripted{responses: []*core.Response{text("hi")}}
+	a, _ := agentkit.NewFromClient(client, agentkit.WithStore(store))
+	if _, err := a.Run(context.Background(), "go", agentkit.WithSession("s1")); err == nil {
+		t.Fatal("expected the run to fail")
+	}
+	if b := store.appends(); len(b) != 0 {
+		t.Errorf("a run with no steps appended %v", b)
+	}
+}
+
+// TestFlushErrorStopsTheRun pins that a store which cannot record is not
+// something a run carries on past. Flushing per step means a failed write is
+// retried by the next flush, so it also pins that the retry does not write
+// the same messages twice.
+func TestFlushErrorStopsTheRun(t *testing.T) {
+	store := newRecordingStore()
+	store.failOn, store.err = 1, errors.New("disk on fire")
+	client := &scripted{responses: []*core.Response{
+		toolCalls(call("c1", "echo", `{"s":"one"}`)),
+		text("done"),
+	}}
+	a, _ := agentkit.NewFromClient(client, agentkit.WithStore(store), agentkit.WithTools(echoTool()))
+	_, err := a.Run(context.Background(), "go", agentkit.WithSession("s1"))
+	if err == nil || !strings.Contains(err.Error(), "disk on fire") {
+		t.Fatalf("err = %v, want the store's error", err)
+	}
+	stored, loadErr := store.Load(context.Background(), "s1")
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	seen := map[string]int{}
+	for _, m := range stored {
+		seen[string(m.Role)+"|"+m.Text()]++
+	}
+	for k, n := range seen {
+		if n > 1 {
+			t.Errorf("message %q stored %d times after a failed flush", k, n)
+		}
 	}
 }

@@ -6,6 +6,31 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-20
+
+### Changed
+
+- **A run now writes its messages to the `Store` as it goes, once per completed
+  step, instead of all at once when the run ends.** `Store`'s contract has always been that it
+  holds the lossless transcript; writing it only at the end meant that for the whole of a run —
+  minutes, for an agent making many tool calls — the store held nothing of it, so anything reading
+  a session live (a transcript view, an export, a session list) saw an empty or absent
+  conversation. Flushing happens only at a step boundary, never between a model response and its
+  tool results, so a stored prefix is always a conversation that can be resumed. A run that never
+  reached the model still writes nothing, a canceled run still records what it produced, and the
+  messages are written exactly once — a watermark over the run's own append-only list, not a
+  rewrite. No API change; consumers with a `Store` get this by passing `WithSession` as before.
+
+  The visible consequence: a process killed mid-run now leaves the steps it had finished, where
+  before it left nothing.
+
+### Fixed
+
+- `FileStore.Append` read the entire session file on every call to check whether the last line was
+  torn. With one append per run that was invisible; with one per step it would have made appending
+  cost time proportional to the session, so it now reads the final byte and only scans backwards
+  when there is a tear to find.
+
 ## [0.3.0] - 2026-09-19
 
 ### Added

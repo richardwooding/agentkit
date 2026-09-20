@@ -120,10 +120,24 @@ docs/          gloam Pages site
   always lands after the `RoleTool` message of the step that was running.
 - **`stopReasonFor(ctx, err)` consults `ctx.Err()` first**: providers report a canceled stream
   as their own transport error, and a user's Esc must read as `StopCancelled`, not `StopError`.
+- **A run persists itself once per step, not once at the end.** `run.flush`
+  (loop.go) appends `newMsgs[saved:]` and advances the watermark; `execute` calls it after each
+  step returns and `finish` calls it once more. `newMsgs` is strictly append-only — only `prepare`
+  (the run's input) and `r.append` write to it, and compaction and handoff rewrite `r.msgs` alone —
+  which is what makes a watermark sufficient. **Flush only where the transcript is consistent**:
+  between `r.append(resp.Message)` and the `core.ToolResults` append there are tool calls with no
+  results, and a stored prefix in that shape is a conversation providers reject on resume. The
+  guards in `flush` are load-bearing: `Steps == 0` writes nothing at all (a run that never reached
+  the model did not happen), `context.WithoutCancel` keeps a canceled run's work, and a store error
+  becomes the run's error only when the run had not already failed. A failed flush leaves the
+  watermark alone so the next one retries the same messages; `Append` is additive and not
+  idempotent, so the watermark is the only thing preventing a double write.
 - **FileStore is append-only JSONL.** Each line is `{"t":"<RFC3339Nano>","m":<Message JSON>}`,
   written with `O_APPEND|O_CREATE|O_WRONLY 0o600` and `Sync`. `Load` drops a torn trailing
   line (and only that one; corruption elsewhere is an error); `Append` truncates a torn tail
-  first so the next line starts on a boundary. Legacy `<id>.json` arrays are read as a
+  first so the next line starts on a boundary — reading the file's *last byte*, not the whole
+  file, because `Append` now runs once per step and a session grows with every call. Legacy
+  `<id>.json` arrays are read as a
   fallback and migrated atomically (write the whole `.jsonl`, remove `.json`) on the first
   `Append`. `List` derives `Created` from the first record, `Updated` from mtime (clamped to
   `Created`; the kernel's mtime clock is coarser than `time.Now`), `Title` from the first user
