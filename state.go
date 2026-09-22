@@ -31,10 +31,13 @@ type runState struct {
 	sink  *usageSink
 	runID string
 	emit  func(Event)
+	// blocked is the enclosing run's human-wait clock, so a tool that blocks
+	// on a person can give the budget that time back.
+	blocked *blockedClock
 }
 
 func withRunState(ctx context.Context, r *run) context.Context {
-	return context.WithValue(ctx, runStateKey{}, runState{depth: r.depth + 1, sink: r.sink, runID: r.runID, emit: r.emit})
+	return context.WithValue(ctx, runStateKey{}, runState{depth: r.depth + 1, sink: r.sink, runID: r.runID, emit: r.emit, blocked: r.blocked})
 }
 
 // depthFrom returns the nesting depth for a run started under ctx.

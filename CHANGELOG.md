@@ -6,6 +6,26 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Budget.Timeout` no longer counts time spent waiting on a human.** It was
+  a plain `context.WithTimeout` set when the run began, so it bounded not only
+  the agent's work but the person answering an approval prompt. A user who
+  stepped away lost the whole run: in one real session two of three runs ended
+  at exactly the budget with the agent idle the entire time, waiting to be told
+  whether it could proceed.
+
+  The budget is now enforced by a watchdog that measures *working* time — wall
+  clock minus whatever an `Approver` spends — and cancels with an explicit
+  `context.DeadlineExceeded` cause, so a run that genuinely ran out of time is
+  still reported as `StopDeadline` and not as a user's interrupt. A tool that
+  hangs is still cut off exactly as before.
+
+  Waits are counted as their union, not their sum: tools run in parallel, so
+  several prompts can be open at once, and one person answering three of them
+  over a minute has cost the run a minute rather than three. A sub-agent shares
+  its parent's clock, so one prompt pauses every budget waiting on that person.
+
 ## [0.4.0] - 2026-09-20
 
 ### Changed

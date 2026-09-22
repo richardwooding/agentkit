@@ -34,6 +34,12 @@ and add `$(go env GOPATH)/bin`. Use `GOWORK=off go mod tidy` at the root (the wo
 tool.go        Tool interface, Output, Call/CallFrom, Raw, Toolset, Rename, Merge
 schema.go      Func/NewFunc (jsonschema-go), FuncOption, SchemaFor, argument validation
 middleware.go  Middleware, Wrap, Timeout, Approve/ApproveWith, Recover, Serial, Observe
+budgetclock.go Budget.Timeout measures *working* time: the clock is paused while an
+               Approver blocks on a human, counted as the union of concurrent waits and
+               shared down a run tree. It is a watchdog rather than context.WithTimeout
+               because a context deadline is fixed at creation and cannot give the time
+               back; it cancels with an explicit DeadlineExceeded cause, so read
+               context.Cause (not ctx.Err) wherever a run-ending error is reported.
 approval.go    Decision (Allow/AllowWith/Deny), Approver, ApproverFunc
 progress.go    Progress/ProgressWriter → EventToolProgress via the toolCtx
 inbox.go       Inbox (Post/PostMessage/Len) + WithInbox: steer a running agent

@@ -38,6 +38,7 @@ type run struct {
 	sink    *usageSink
 	parent  *usageSink
 	stop    error
+	blocked *blockedClock
 	handoff *Agent
 	nudged  bool
 	pins    []pin
@@ -73,9 +74,18 @@ func (r *run) prepare(ctx context.Context, input []core.Message) (context.Contex
 	r.start = time.Now()
 	r.depth = depthFrom(ctx)
 	r.parent = parentSink(ctx)
+	// A sub-agent shares its parent's blocked clock: one person answering one
+	// prompt must pause every budget waiting on them, not just the innermost.
+	r.blocked = blockedFrom(ctx)
+	if r.blocked == nil {
+		r.blocked = &blockedClock{}
+	}
 	cancel := context.CancelFunc(func() {})
 	if r.origin.budget.Timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, r.origin.budget.Timeout)
+		var cancelCause context.CancelCauseFunc
+		ctx, cancelCause = context.WithCancelCause(ctx)
+		cancel = func() { cancelCause(nil) }
+		go r.watchBudget(ctx, cancelCause, r.origin.budget.Timeout)
 	}
 	if r.agent.instructions != "" {
 		r.msgs = append(r.msgs, core.System(r.agent.instructions))
@@ -186,7 +196,7 @@ func (r *run) toolCalls(ctx context.Context, calls []core.ToolCall) bool {
 		r.stopWith(StopMaxToolCalls, budgetStop)
 		return false
 	case ctx.Err() != nil:
-		r.stopWith(stopReasonFor(ctx, ctx.Err()), ctx.Err())
+		r.stopWith(stopReasonFor(ctx, context.Cause(ctx)), context.Cause(ctx))
 		return false
 	case r.handoff != nil:
 		return r.switchAgent(r.handoff)
@@ -219,13 +229,13 @@ func (r *run) execTools(ctx context.Context, calls []core.ToolCall) []core.ToolR
 		})
 		for j, i := range concurrent {
 			if !started[j] {
-				results[i] = r.skipped(calls[i:i+1], ctx.Err().Error())[0]
+				results[i] = r.skipped(calls[i:i+1], context.Cause(ctx).Error())[0]
 			}
 		}
 	}
 	for _, i := range sequential {
 		if ctx.Err() != nil {
-			results[i] = r.skipped(calls[i:i+1], ctx.Err().Error())[0]
+			results[i] = r.skipped(calls[i:i+1], context.Cause(ctx).Error())[0]
 			continue
 		}
 		results[i] = r.callTool(ctx, calls[i])
@@ -388,7 +398,10 @@ func (r *run) fireRunStart() {
 // a provider often reports a canceled stream as its own transport error, and a
 // user's cancellation must read as canceled, not as a failure.
 func stopReasonFor(ctx context.Context, err error) StopReason {
-	if cerr := ctx.Err(); cerr != nil {
+	// context.Cause, not ctx.Err: the budget cancels with an explicit
+	// DeadlineExceeded cause so a run that ran out of working time still
+	// reads as a deadline rather than as the user's interrupt.
+	if cerr := context.Cause(ctx); cerr != nil {
 		err = cerr
 	}
 	switch {

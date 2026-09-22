@@ -81,7 +81,13 @@ func ApproveWith(ap Approver) Middleware {
 		if send != nil {
 			send(Event{Kind: EventApprovalRequest})
 		}
+		// Whatever the Approver spends is a person deciding, not the agent
+		// working, so the run's budget is paused for it. Without this a
+		// prompt left open long enough kills the very run it belongs to.
+		clock := blockedFrom(ctx)
+		clock.enter()
 		d, err := ap.Approve(ctx, c)
+		clock.leave()
 		if err != nil {
 			d = Deny(err.Error())
 		}
@@ -89,7 +95,7 @@ func ApproveWith(ap Approver) Middleware {
 			send(Event{Kind: EventApprovalResult, Decision: &d})
 		}
 		if ctx.Err() != nil {
-			return Errorf("%s%v", notExecutedMessage, ctx.Err()), ctx.Err()
+			return Errorf("%s%v", notExecutedMessage, context.Cause(ctx)), context.Cause(ctx)
 		}
 		if !d.Allow {
 			return Errorf("not approved: %s", d.Reason), fmt.Errorf("%w: %s", ErrApprovalDenied, d.Reason)

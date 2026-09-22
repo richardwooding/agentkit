@@ -75,13 +75,13 @@ func (p RetryPolicy) Delay(attempt int, err error) time.Duration {
 
 func sleepCtx(ctx context.Context, d time.Duration) error {
 	if d <= 0 {
-		return ctx.Err()
+		return context.Cause(ctx)
 	}
 	t := time.NewTimer(d)
 	defer t.Stop()
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return context.Cause(ctx)
 	case <-t.C:
 		return nil
 	}
